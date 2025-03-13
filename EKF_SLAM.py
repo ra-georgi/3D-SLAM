@@ -20,7 +20,9 @@ class EKF_SLAM:
         self.cov_0 = param_dict["Initial_Covariance"]
         self.sim_step_size = param_dict["Time_Step"]
         self.final_time = param_dict["Final_Time"]
-        self.Quad_Length = param_dict["Quad_Length"]
+        self.quad_length = param_dict["Quad_Length"]
+        self.landmark_positions = param_dict["Landmarks"]
+        self.sensor_range = param_dict["Sensor_Working_Distance"]
 
         self.num_time_steps = int(self.final_time/self.sim_step_size)+1  
 
@@ -42,14 +44,54 @@ class EKF_SLAM:
         self.mu = np.zeros((state_size,self.num_time_steps))
         self.cov =  np.zeros((cov_mat_dim, cov_mat_dim, self.num_time_steps))
 
+        self.num_landmarks = int(self.landmark_positions.shape[0])
+
     def simulate(self):
         # Simulate Quadcopter motion as per dynamics
+        u_odom = np.array([0.5, 0.5, 0.5])
         for i in range(self.num_time_steps-1):
-            self.mu[0:3,i+1] = self.mu[0:3,i] + 0.5
+            # self.mu[0:3,i+1] = self.mu[0:3,i] + 0.5
+            self.mu[:,i+1], self.cov[:,:,i+1] = self.prediction_step(self.mu[:,i], self.cov[:,:,i],u_odom)
+            z = self.sensor_model(self.mu[:,i+1])
             if ( max(self.mu[:,i+1]) > 1000000 ):
                     self.time_vector = 0
                     print("Numerical issues")
                     break
+            
+    def prediction_step(self, mu_previous, cov_previous, u_odom):
+         #Perform prediction step of EKF based on odometry data
+
+        #Don't do mu_current =  mu_previous, will overwrite
+        mu_current =  mu_previous.copy()
+        cov_current = cov_previous.copy()
+
+        mu_current[0:3] += u_odom
+        R = 0.05
+        cov_current[0,0] += R
+        cov_current[1,1] += R
+        cov_current[2,2] += R
+
+        return mu_current, cov_current
+
+    def sensor_model(self, mu_estimate):
+        #Simulates range, pitch, and yaw sensor
+        landmark_rel_position = self.landmark_positions[0, :] - mu_estimate
+        landmark_range = np.sqrt( np.dot(landmark_rel_position,landmark_rel_position) )
+
+        if landmark_range <= self.sensor_range:
+            z = np.zeros((3,))
+            z[0] =  landmark_range   #Range
+            del_x = landmark_rel_position[0]
+            del_y = landmark_rel_position[1]
+            xy_distance = np.sqrt( (del_x^2) + (del_y^2))
+            z[1] =  np.arctan2(landmark_rel_position[2], xy_distance)
+            z[2] =  np.arctan2(del_y, del_x)
+
+            if mu_estimate.shape[0] < ( 3 + (self.num_landmarks*3)):
+                pass
+
+        return z
+
             
     def animate_quad(self):
 
@@ -69,7 +111,7 @@ class EKF_SLAM:
         
         x0, y0, z0 = self.mu[0,0], self.mu[1,0], self.mu[2,0]
 
-        l = self.Quad_Length
+        l = self.quad_length
         self.quad_Arm1 = self.ax_anim.plot3D([x0+l, x0-l], [y0, y0], [z0, z0], lw=3 )[0]
         self.quad_Arm2 = self.ax_anim.plot3D([x0, x0], [y0+l, y0-l], [z0, z0], lw=3 )[0]
         self.quad_traj = self.ax_anim.plot3D(x0, y0, z0, 'gray')[0] 
@@ -104,7 +146,7 @@ class EKF_SLAM:
             # Q = self.quat_to_rotmat(quat)
             Q = np.eye(3)
 
-            l = self.Quad_Length
+            l = self.quad_length
 
             Arm1_Start = np.array([l,0,0])
             Arm1_End = np.array([-l,0,0])
