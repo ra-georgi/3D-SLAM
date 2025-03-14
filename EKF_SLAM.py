@@ -38,13 +38,20 @@ class EKF_SLAM:
 
         self.time_vector = np.linspace(0, self.final_time, num=self.num_time_steps)
 
-        state_size = self.mu_0.size  # 1-D array
-        cov_mat_dim = int(self.cov_0.shape[0])
+        self.num_landmarks = int(self.landmark_positions.shape[0])
+        state_size = (self.mu_0.size) + (3*self.num_landmarks)  # 1-D array
+        # cov_mat_dim = int(self.cov_0.shape[0])
         
         self.mu = np.zeros((state_size,self.num_time_steps))
-        self.cov =  np.zeros((cov_mat_dim, cov_mat_dim, self.num_time_steps))
+        # Update state/mean vector with initial condition
+        self.mu[0:self.mu_0.size, 0] = self.mu_0
 
-        self.num_landmarks = int(self.landmark_positions.shape[0])
+        self.cov =  np.zeros((state_size, state_size, self.num_time_steps))
+        self.cov[0:self.mu_0.size,0:self.mu_0.size, 0] = self.cov_0
+        # Each row i has measurements (range, pitch, yaw) corresponding to landmark i
+        # 4th column is boolean representing if landmark has been seen yet or not (To increase size of mu and cov)
+        # 5th column is boolean representing if landmark was observed this time step (To know which landmarks were observed)
+        self.measurements  =  np.zeros((self.num_landmarks, 5))
 
     def simulate(self):
         # Simulate Quadcopter motion as per dynamics
@@ -52,7 +59,8 @@ class EKF_SLAM:
         for i in range(self.num_time_steps-1):
             # self.mu[0:3,i+1] = self.mu[0:3,i] + 0.5
             self.mu[:,i+1], self.cov[:,:,i+1] = self.prediction_step(self.mu[:,i], self.cov[:,:,i],u_odom)
-            z = self.sensor_model(self.mu[:,i+1])
+            #Updates self.measurements/Get newest measurement
+            self.sensor_model(self.mu[:,i+1])   
             if ( max(self.mu[:,i+1]) > 1000000 ):
                     self.time_vector = 0
                     print("Numerical issues")
@@ -83,14 +91,15 @@ class EKF_SLAM:
             z[0] =  landmark_range   #Range
             del_x = landmark_rel_position[0]
             del_y = landmark_rel_position[1]
-            xy_distance = np.sqrt( (del_x^2) + (del_y^2))
+            xy_distance = np.sqrt( (del_x**2) + (del_y**2))
             z[1] =  np.arctan2(landmark_rel_position[2], xy_distance)
             z[2] =  np.arctan2(del_y, del_x)
 
             if mu_estimate.shape[0] < ( 3 + (self.num_landmarks*3)):
-                pass
+                zeros_vector = np.zeros((3,self.num_time_steps))
+                self.mu = np.vstack((self.mu, zeros_vector))
 
-        return z
+            return z
 
             
     def animate_quad(self):
