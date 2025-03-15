@@ -47,20 +47,34 @@ class EKF_SLAM:
         self.mu[0:self.mu_0.size, 0] = self.mu_0
 
         self.cov =  np.zeros((state_size, state_size, self.num_time_steps))
-        self.cov[0:self.mu_0.size,0:self.mu_0.size, 0] = self.cov_0
+
+        self.variance_robot_pose = np.zeros((self.mu_0.size, self.mu_0.size))
+        self.variance_landmarks =  1000*np.eye(3*self.num_landmarks)
+        self.cov_robot_with_landmarks =  np.zeros((self.mu_0.size,3*self.num_landmarks))
+
+        #Should variance_landmarks for future timesteps be initialzed to 1000 too?
+        self.cov[:,:, 0] = np.block([
+            [self.variance_robot_pose,        self.cov_robot_with_landmarks        ],
+            [self.cov_robot_with_landmarks.T, self.variance_landmarks              ]
+        ])
+
+        # self.cov[0:self.mu_0.size,0:self.mu_0.size, 0] = self.cov_0
+
         # Each row i has measurements (range, pitch, yaw) corresponding to landmark i
-        # 4th column is boolean representing if landmark has been seen yet or not (To increase size of mu and cov)
+        # 4th column is boolean representing if landmark has been seen yet or not (To increase size of mu and cov, not required now)
         # 5th column is boolean representing if landmark was observed this time step (To know which landmarks were observed)
         self.measurements  =  np.zeros((self.num_landmarks, 5))
 
     def simulate(self):
         # Simulate Quadcopter motion as per dynamics
-        u_odom = np.array([0.5, 0.5, 0.5])
+        u_odom = np.array([0.2, 0.2, 0.2])
         for i in range(self.num_time_steps-1):
             # self.mu[0:3,i+1] = self.mu[0:3,i] + 0.5
-            self.mu[:,i+1], self.cov[:,:,i+1] = self.prediction_step(self.mu[:,i], self.cov[:,:,i],u_odom)
+            self.mu[:,i+1], self.cov[:,:,i+1] = self.prediction_step(self.mu[:,i], self.cov[:,:,i], u_odom)
+
             #Updates self.measurements/Get newest measurement
-            self.sensor_model(self.mu[:,i+1])   
+            self.sensor_model(self.mu[:,i+1])  
+             
             if ( max(self.mu[:,i+1]) > 1000000 ):
                     self.time_vector = 0
                     print("Numerical issues")
@@ -83,24 +97,27 @@ class EKF_SLAM:
 
     def sensor_model(self, mu_estimate):
         #Simulates range, pitch, and yaw sensor
-        landmark_rel_position = self.landmark_positions[0, :] - mu_estimate
-        landmark_range = np.sqrt( np.dot(landmark_rel_position,landmark_rel_position) )
+        
+        self.measurements[:, 4] = 0  #Reset observations tracker
+        landmark_rel_position =  1e5*np.ones((self.num_landmarks,3))
+        landmark_range        =  1e5*np.ones((self.num_landmarks))
 
-        if landmark_range <= self.sensor_range:
-            z = np.zeros((3,))
-            z[0] =  landmark_range   #Range
-            del_x = landmark_rel_position[0]
-            del_y = landmark_rel_position[1]
-            xy_distance = np.sqrt( (del_x**2) + (del_y**2))
-            z[1] =  np.arctan2(landmark_rel_position[2], xy_distance)
-            z[2] =  np.arctan2(del_y, del_x)
+        for i in range(self.num_landmarks):
+            landmark_rel_position[i,:] = self.landmark_positions[i, :] - mu_estimate[0:3]
+            landmark_range[i] = np.sqrt( np.dot(landmark_rel_position[i,:],landmark_rel_position[i,:]) )
 
-            if mu_estimate.shape[0] < ( 3 + (self.num_landmarks*3)):
-                zeros_vector = np.zeros((3,self.num_time_steps))
-                self.mu = np.vstack((self.mu, zeros_vector))
+            if landmark_range[i] < self.sensor_range:
+                self.measurements[i, 3] = 1             
+                self.measurements[i, 4] = 1
 
-            return z
+                del_x = landmark_rel_position[i,0]
+                del_y = landmark_rel_position[i,1]
+                del_z = landmark_rel_position[i,2]
+                xy_distance = np.sqrt( (del_x**2) + (del_y**2))
 
+                self.measurements[i,0] = landmark_range[i]
+                self.measurements[i,1] = np.arctan2(del_z, xy_distance)
+                self.measurements[i,2] = np.arctan2(del_y, del_x)
             
     def animate_quad(self):
 
