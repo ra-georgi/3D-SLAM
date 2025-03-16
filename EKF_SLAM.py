@@ -39,26 +39,26 @@ class EKF_SLAM:
         self.time_vector = np.linspace(0, self.final_time, num=self.num_time_steps)
 
         self.num_landmarks = int(self.landmark_positions.shape[0])
-        state_size = (self.mu_0.size) + (3*self.num_landmarks)  # 1-D array
+        self.robot_state_size = self.mu_0.size
+
+        state_size = (self.robot_state_size) + (3*self.num_landmarks)  # 1-D array
         # cov_mat_dim = int(self.cov_0.shape[0])
         
         self.mu = np.zeros((state_size,self.num_time_steps))
         # Update state/mean vector with initial condition
-        self.mu[0:self.mu_0.size, 0] = self.mu_0
+        self.mu[0:self.robot_state_size, 0] = self.mu_0
 
         self.cov =  np.zeros((state_size, state_size, self.num_time_steps))
 
-        self.variance_robot_pose = np.zeros((self.mu_0.size, self.mu_0.size))
+        self.variance_robot_pose = np.zeros((self.robot_state_size, self.robot_state_size))
         self.variance_landmarks =  1000*np.eye(3*self.num_landmarks)
-        self.cov_robot_with_landmarks =  np.zeros((self.mu_0.size,3*self.num_landmarks))
+        self.cov_robot_with_landmarks =  np.zeros((self.robot_state_size,3*self.num_landmarks))
 
         #Should variance_landmarks for future timesteps be initialzed to 1000 too?
         self.cov[:,:, 0] = np.block([
             [self.variance_robot_pose,        self.cov_robot_with_landmarks        ],
             [self.cov_robot_with_landmarks.T, self.variance_landmarks              ]
         ])
-
-        # self.cov[0:self.mu_0.size,0:self.mu_0.size, 0] = self.cov_0
 
         # Each row i has measurements (range, pitch, yaw) corresponding to landmark i
         # 4th column is boolean representing if landmark has been seen yet or not (To increase size of mu and cov, not required now)
@@ -70,11 +70,16 @@ class EKF_SLAM:
         u_odom = np.array([0.2, 0.2, 0.2])
         for i in range(self.num_time_steps-1):
             # self.mu[0:3,i+1] = self.mu[0:3,i] + 0.5
+
+            #Prediction Step
             self.mu[:,i+1], self.cov[:,:,i+1] = self.prediction_step(self.mu[:,i], self.cov[:,:,i], u_odom)
 
             #Updates self.measurements/Get newest measurement
             self.sensor_model(self.mu[:,i+1])  
-             
+            
+            #Measurement Update step
+            self.measurement_update(self.mu[:,i+1], self.cov[:,:,i+1])
+
             if ( max(self.mu[:,i+1]) > 1000000 ):
                     self.time_vector = 0
                     print("Numerical issues")
@@ -107,7 +112,7 @@ class EKF_SLAM:
             landmark_range[i] = np.sqrt( np.dot(landmark_rel_position[i,:],landmark_rel_position[i,:]) )
 
             if landmark_range[i] < self.sensor_range:
-                self.measurements[i, 3] = 1             
+                # self.measurements[i, 3] = 1             #Set in measurment update step
                 self.measurements[i, 4] = 1
 
                 del_x = landmark_rel_position[i,0]
@@ -118,7 +123,57 @@ class EKF_SLAM:
                 self.measurements[i,0] = landmark_range[i]
                 self.measurements[i,1] = np.arctan2(del_z, xy_distance)
                 self.measurements[i,2] = np.arctan2(del_y, del_x)
-            
+
+    def measurement_update(self, mu, cov):
+        # Measurement incorporation step of Kalman filter
+
+        x_landmark = y_landmark = z_landmark = xy = 0
+        x_robot = y_robot = z_robot = 0
+        
+        measurement = np.array([])
+        expected_measurement =  np.array([])
+
+        for i in range(self.num_landmarks):
+
+            #Measured in this time step             
+            if (self.measurements[i, 4] == 1):
+                range_reading = self.measurements[i, 0]
+                pitch_reading = self.measurements[i, 1] 
+                yaw_reading   = self.measurements[i, 2] 
+                
+                #Initialize Landmark position if not previously observed
+                if (self.measurements[i, 3] == 0):
+                    self.measurements[i, 3] = 1
+                    z_landmark = range_reading*np.sin(pitch_reading)
+                    xy = range_reading*np.cos(pitch_reading)
+                    y_landmark  = xy*np.sin(yaw_reading)
+                    x_landmark =  xy*np.cos(yaw_reading)
+                    x_robot = mu[0]
+                    y_robot = mu[1]
+                    z_robot = mu[2]
+                    mu[self.robot_state_size+(3*i) : self.robot_state_size+(3*i)+3] = [x_robot+x_landmark, y_robot+y_landmark, z_robot+z_landmark]
+                     
+                landmark_rel_position = mu[self.robot_state_size+(3*i) : self.robot_state_size+(3*i)+3] - mu[0:3]
+                del_x = landmark_rel_position[0]
+                del_y = landmark_rel_position[1]
+                del_z = landmark_rel_position[2]
+                xy_distance = np.sqrt( (del_x**2) + (del_y**2))
+
+                predicted_range = np.sqrt( np.dot(landmark_rel_position,landmark_rel_position) )
+                predicted_pitch = np.arctan2(del_z, xy_distance)
+                predicted_yaw   = np.arctan2(del_y, del_x)
+
+                measurement = np.append(measurement, self.measurements[i, 0:3])
+                expected_measurement = np.append(expected_measurement, [predicted_range,predicted_pitch, predicted_yaw])
+                print(f"Relative Coords: {[del_x,del_x,del_z]}")
+
+        print(f"Measurement: {measurement}")
+        print(f"mu: {mu}")
+        print("")
+        
+                
+
+
     def animate_quad(self):
 
         fig = plt.figure(figsize=(8,6))
