@@ -41,14 +41,14 @@ class EKF_SLAM:
         self.num_landmarks = int(self.landmark_positions.shape[0])
         self.robot_state_size = self.mu_0.size
 
-        state_size = (self.robot_state_size) + (3*self.num_landmarks)  # 1-D array
+        self.state_size = (self.robot_state_size) + (3*self.num_landmarks)  # 1-D array
         # cov_mat_dim = int(self.cov_0.shape[0])
         
-        self.mu = np.zeros((state_size,self.num_time_steps))
+        self.mu = np.zeros((self.state_size,self.num_time_steps))
         # Update state/mean vector with initial condition
         self.mu[0:self.robot_state_size, 0] = self.mu_0
 
-        self.cov =  np.zeros((state_size, state_size, self.num_time_steps))
+        self.cov =  np.zeros((self.state_size, self.state_size, self.num_time_steps))
 
         self.variance_robot_pose = np.zeros((self.robot_state_size, self.robot_state_size))
         self.variance_landmarks =  1000*np.eye(3*self.num_landmarks)
@@ -132,6 +132,10 @@ class EKF_SLAM:
         
         measurement = np.array([])
         expected_measurement =  np.array([])
+        #Number of measurements in this time step
+        num_measurements = int(sum(self.measurements[:,4]))
+        H = np.zeros((3*num_measurements,self.state_size))
+        measurment_num  = 0   #To properly create H matrix as not all measurment contribute to H at every time step
 
         for i in range(self.num_landmarks):
 
@@ -165,10 +169,17 @@ class EKF_SLAM:
 
                 measurement = np.append(measurement, self.measurements[i, 0:3])
                 expected_measurement = np.append(expected_measurement, [predicted_range,predicted_pitch, predicted_yaw])
-                print(f"Relative Coords: {[del_x,del_x,del_z]}")
+                # print(f"Relative Coords: {[del_x,del_x,del_z]}")
+
+                jacobian_range_with_robot_pose = (-1/predicted_range)*np.array([del_x, del_y, del_z])
+                jacobian_range_with_landmark = (1/predicted_range)*np.array([del_x, del_y, del_z])
+                H[ (3*measurment_num) , 0:3 ] = jacobian_range_with_robot_pose
+                H[ (3*measurment_num) , self.robot_state_size+(3*i) : self.robot_state_size+(3*i)+3] = jacobian_range_with_robot_pose
+
+                measurment_num  += 1
 
         print(f"Measurement: {measurement}")
-        print(f"mu: {mu}")
+        print(f"H: {H}")
         print("")
         
                 
