@@ -7,8 +7,9 @@ default_param_dict = {
   "Final_Time": 2,
   "Quad_Length": 0.2,
   "Landmarks": np.array([             #Coordinates of Landmarks
-      [1, 1, 1],                       #Comment whole line if ignoring landmarks
-      [0.5, 0.5, 0.5]                       
+      # [1, 1, 1],                       #Comment whole line if ignoring landmarks
+      [0.5, 0.5, 0.5],
+      [1, 1, 1],                       
   ]),
   "Sensor_Working_Distance": 1.0,
 }

@@ -135,7 +135,7 @@ class EKF_SLAM:
         #Number of measurements in this time step
         num_measurements = int(sum(self.measurements[:,4]))
         H = np.zeros((3*num_measurements,self.state_size))
-        measurment_num  = 0   #To properly create H matrix as not all measurment contribute to H at every time step
+        measurement_num  = 0   #To properly create H matrix as not all measurment contribute to H at every time step
 
         for i in range(self.num_landmarks):
 
@@ -173,10 +173,30 @@ class EKF_SLAM:
 
                 jacobian_range_with_robot_pose = (-1/predicted_range)*np.array([del_x, del_y, del_z])
                 jacobian_range_with_landmark = (1/predicted_range)*np.array([del_x, del_y, del_z])
-                H[ (3*measurment_num) , 0:3 ] = jacobian_range_with_robot_pose
-                H[ (3*measurment_num) , self.robot_state_size+(3*i) : self.robot_state_size+(3*i)+3] = jacobian_range_with_robot_pose
+                H[ (3*measurement_num) , 0:3 ] = jacobian_range_with_robot_pose
+                H[ (3*measurement_num) , self.robot_state_size+(3*i) : self.robot_state_size+(3*i)+3] = jacobian_range_with_landmark
 
-                measurment_num  += 1
+                jacobian_pitch_with_robot_pose = ( 1/(predicted_range**2) ) * np.array( [
+                     del_x*del_z*(1/xy_distance), 
+                     del_y*del_z*(1/xy_distance), 
+                     -xy_distance
+                     ] ) 
+
+                jacobian_pitch_with_landmark = ( 1/(predicted_range**2) ) * np.array( [
+                                    -del_x*del_z*(1/xy_distance), 
+                                    -del_y*del_z*(1/xy_distance), 
+                                    xy_distance
+                                    ] )          
+                H[ (3*measurement_num)+1 , 0:3 ] = jacobian_pitch_with_robot_pose
+                H[ (3*measurement_num)+1 , self.robot_state_size+(3*i) : self.robot_state_size+(3*i)+3] = jacobian_pitch_with_landmark
+
+                jacobian_yaw_with_robot_pose = (1/(xy_distance)**2)*np.array([del_y, -del_x, 0])
+                jacobian_yaw_with_landmark   = (1/(xy_distance)**2)*np.array([-del_y, del_x, 0])
+
+                H[ (3*measurement_num)+2 , 0:3 ] = jacobian_yaw_with_robot_pose
+                H[ (3*measurement_num)+2 , self.robot_state_size+(3*i) : self.robot_state_size+(3*i)+3] = jacobian_yaw_with_landmark
+
+                measurement_num  += 1
 
         print(f"Measurement: {measurement}")
         print(f"H: {H}")
