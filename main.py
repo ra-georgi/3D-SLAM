@@ -1,5 +1,8 @@
 #main file
 
+# To Do:
+#If updating state with quaternions/angles, remember to normalize the angles
+
 from EKF_SLAM import EKF_SLAM
 from parameters import default_param_dict
 

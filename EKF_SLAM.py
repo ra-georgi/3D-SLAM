@@ -78,7 +78,7 @@ class EKF_SLAM:
             self.sensor_model(self.mu[:,i+1])  
             
             #Measurement Update step
-            self.measurement_update(self.mu[:,i+1], self.cov[:,:,i+1])
+            self.mu[:,i+1], self.cov[:,:,i+1] = self.measurement_update(self.mu[:,i+1], self.cov[:,:,i+1])
 
             if ( max(self.mu[:,i+1]) > 1000000 ):
                     self.time_vector = 0
@@ -198,12 +198,16 @@ class EKF_SLAM:
 
                 measurement_num  += 1
 
-        print(f"Measurement: {measurement}")
-        print(f"H: {H}")
-        print("")
-        
-                
+        Q = 0.05 * np.eye(((3*num_measurements)))
+        K = (cov @ (H.T)) @ np.linalg.inv( (H @ cov @ (H.T)) + Q)
 
+        mu = mu + (K @ (measurement-expected_measurement))
+        cov = (np.eye(self.state_size) - (K @ H) ) @ cov;        
+        
+        # print(f"Measurement: {measurement}")
+        # print(f"H: {H}")
+        # print("")
+        return mu, cov
 
     def animate_quad(self):
 
