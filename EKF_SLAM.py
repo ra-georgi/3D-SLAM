@@ -233,21 +233,23 @@ class EKF_SLAM:
         self.quad_traj = self.ax_anim.plot3D(x0, y0, z0, 'gray')[0] 
 
         #To make quadcopter's arms look equal in animation
-        self.ax_anim.set_xlim([0,10])
-        self.ax_anim.set_ylim([0,10])
-        self.ax_anim.set_zlim([0,10])      
+        self.ax_anim.set_xlim([0,5])
+        self.ax_anim.set_ylim([0,5])
+        self.ax_anim.set_zlim([0,5])      
   
-        # if self.CA:
-        #         r = 0.5
-        #         #Plot obstacles
-        #         u, v = np.mgrid[0:2*np.pi:50j, 0:np.pi:50j]
-        #         x = r*np.cos(u)*np.sin(v)
-        #         y = r*np.sin(u)*np.sin(v) 
-        #         z = r*np.cos(v)
-        #         for obs in self.obs_coords:
-        #                 self.ax_anim.plot_surface(x+obs[0], y+obs[1], z+obs[2], color='b',alpha=0.3)       
-        # 
- 
+        r = 0.1
+        #Plot Landmarks
+        u, v = np.mgrid[0:2*np.pi:50j, 0:np.pi:50j]
+        x_LM = r*np.cos(u)*np.sin(v)
+        y_LM = r*np.sin(u)*np.sin(v) 
+        z_LM = r*np.cos(v)
+        for obs in self.landmark_positions:
+                self.ax_anim.plot_surface(x_LM+obs[0], y_LM+obs[1], z_LM+obs[2], color='b',alpha=0.3)       
+        
+        # Initialize the ellipsoid surface
+        x_robot, y_robot, z_robot = self.get_ellipsoid(self.mu[:, 0], self.cov[:, :, 0], self)
+        surf = self.ax_anim.plot_surface(x_robot, y_robot, z_robot, color='b', alpha=0.5)
+
         self.ani = FuncAnimation(fig=fig, func=self.update_animation_frame,frames=self.num_time_steps, fargs=(self,),interval=45)
         plt.show()
     
@@ -285,6 +287,25 @@ class EKF_SLAM:
             self.text_z.set_text(f'z = {zt:.2f} m')
             return 
 
+    @staticmethod
+    def get_ellipsoid(mean, cov, self, scale=2.45):  # scale=2.45 for ~95% confidence
+         
+        # Function to generate ellipsoid points
+        u = np.linspace(0, 2 * np.pi, 20)  # Reduced resolution for speed
+        v = np.linspace(0, np.pi, 20)
+        x = np.outer(np.cos(u), np.sin(v))
+        y = np.outer(np.sin(u), np.sin(v))
+        z = np.outer(np.ones(np.size(u)), np.cos(v))
+        sphere = np.stack([x, y, z], axis=0) * scale
+        
+        eigvals, eigvecs = np.linalg.eigh(cov[0:self.robot_state_size, 0:self.robot_state_size])
+        radii = np.sqrt(np.maximum(eigvals, 0))  # Ensure non-negative
+        transform = eigvecs @ np.diag(radii)
+        
+        ellipsoid = transform @ sphere.reshape(3, -1) + mean[:, np.newaxis]
+        return (ellipsoid[0].reshape(x.shape),
+                ellipsoid[1].reshape(y.shape),
+                ellipsoid[2].reshape(z.shape))        
 
       
     

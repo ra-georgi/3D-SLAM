@@ -11,7 +11,7 @@ SLAM_Object = EKF_SLAM(default_param_dict)
 # print(SLAM_Object.__dict__)
 
 SLAM_Object.simulate()
-# SLAM_Object.animate_quad()
+SLAM_Object.animate_quad()
 # print(SLAM_Object.mu)
 
 
