@@ -48,14 +48,14 @@ class EKF_SLAM:
         # Update state/mean vector with initial condition
         self.mu[0:self.robot_state_size, 0] = self.mu_0
 
-        self.cov =  np.zeros((self.state_size, self.state_size, self.num_time_steps))
+        self.cov =  np.zeros((self.num_time_steps, self.state_size, self.state_size))
 
         self.variance_robot_pose = np.zeros((self.robot_state_size, self.robot_state_size))
         self.variance_landmarks =  1000*np.eye(3*self.num_landmarks)
         self.cov_robot_with_landmarks =  np.zeros((self.robot_state_size,3*self.num_landmarks))
 
         #Should variance_landmarks for future timesteps be initialzed to 1000 too?
-        self.cov[:,:, 0] = np.block([
+        self.cov[0, :, : ] = np.block([
             [self.variance_robot_pose,        self.cov_robot_with_landmarks        ],
             [self.cov_robot_with_landmarks.T, self.variance_landmarks              ]
         ])
@@ -72,13 +72,13 @@ class EKF_SLAM:
             # self.mu[0:3,i+1] = self.mu[0:3,i] + 0.5
 
             #Prediction Step
-            self.mu[:,i+1], self.cov[:,:,i+1] = self.prediction_step(self.mu[:,i], self.cov[:,:,i], u_odom)
+            self.mu[:,i+1], self.cov[i+1,:,:] = self.prediction_step(self.mu[:,i], self.cov[i,:,:,], u_odom)
 
             #Updates self.measurements/Get newest measurement
             self.sensor_model(self.mu[:,i+1])  
             
             #Measurement Update step
-            self.mu[:,i+1], self.cov[:,:,i+1] = self.measurement_update(self.mu[:,i+1], self.cov[:,:,i+1])
+            self.mu[:,i+1], self.cov[i+1,:,:] = self.measurement_update(self.mu[:,i+1], self.cov[i+1,:,:])
 
             if ( max(self.mu[:,i+1]) > 1000000 ):
                     self.time_vector = 0
@@ -247,8 +247,8 @@ class EKF_SLAM:
                 self.ax_anim.plot_surface(x_LM+obs[0], y_LM+obs[1], z_LM+obs[2], color='b',alpha=0.3)       
         
         # Initialize the ellipsoid surface
-        x_robot, y_robot, z_robot = self.get_ellipsoid(self.mu[:, 0], self.cov[:, :, 0], self)
-        surf = self.ax_anim.plot_surface(x_robot, y_robot, z_robot, color='b', alpha=0.5)
+        x_robot, y_robot, z_robot = self.get_ellipsoid(self.mu[0:3, 0], self.cov[0, 0:3, 0:3])
+        self.surf = self.ax_anim.plot_surface(x_robot, y_robot, z_robot, color='b', alpha=0.3)
 
         self.ani = FuncAnimation(fig=fig, func=self.update_animation_frame,frames=self.num_time_steps, fargs=(self,),interval=45)
         plt.show()
@@ -285,10 +285,14 @@ class EKF_SLAM:
             self.text_x.set_text(f'x = {xt:.2f} m')
             self.text_y.set_text(f'y = {yt:.2f} m')
             self.text_z.set_text(f'z = {zt:.2f} m')
+
+            self.surf.remove()  # Remove the old surface
+            x_robot, y_robot, z_robot = self.get_ellipsoid(self.mu[0:3, frame], self.cov[frame, 0:3, 0:3])
+            self.surf = self.ax_anim.plot_surface(x_robot, y_robot, z_robot, color='b', alpha=0.3)
+
             return 
 
-    @staticmethod
-    def get_ellipsoid(mean, cov, self, scale=2.45):  # scale=2.45 for ~95% confidence
+    def get_ellipsoid(self, mean, cov, scale=2.45):  # scale=2.45 for ~95% confidence
          
         # Function to generate ellipsoid points
         u = np.linspace(0, 2 * np.pi, 20)  # Reduced resolution for speed
@@ -298,7 +302,7 @@ class EKF_SLAM:
         z = np.outer(np.ones(np.size(u)), np.cos(v))
         sphere = np.stack([x, y, z], axis=0) * scale
         
-        eigvals, eigvecs = np.linalg.eigh(cov[0:self.robot_state_size, 0:self.robot_state_size])
+        eigvals, eigvecs = np.linalg.eigh(cov)
         radii = np.sqrt(np.maximum(eigvals, 0))  # Ensure non-negative
         transform = eigvecs @ np.diag(radii)
         
