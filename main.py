@@ -2,6 +2,7 @@
 
 # To Do:
 #If updating state with quaternions/angles, remember to normalize the angles
+#Update Q and R as parameters
 
 from EKF_SLAM import EKF_SLAM
 from parameters import default_param_dict

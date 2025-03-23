@@ -93,7 +93,7 @@ class EKF_SLAM:
         cov_current = cov_previous.copy()
 
         mu_current[0:3] += u_odom
-        R = 0.05
+        R = 0.03
         cov_current[0,0] += R
         cov_current[1,1] += R
         cov_current[2,2] += R
@@ -198,7 +198,7 @@ class EKF_SLAM:
 
                 measurement_num  += 1
 
-        Q = 0.05 * np.eye(((3*num_measurements)))
+        Q = 0.02 * np.eye(((3*num_measurements)))
         K = (cov @ (H.T)) @ np.linalg.inv( (H @ cov @ (H.T)) + Q)
 
         mu = mu + (K @ (measurement-expected_measurement))
@@ -233,9 +233,9 @@ class EKF_SLAM:
         self.quad_traj = self.ax_anim.plot3D(x0, y0, z0, 'gray')[0] 
 
         #To make quadcopter's arms look equal in animation
-        self.ax_anim.set_xlim([0,5])
-        self.ax_anim.set_ylim([0,5])
-        self.ax_anim.set_zlim([0,5])      
+        self.ax_anim.set_xlim([0,10])
+        self.ax_anim.set_ylim([0,10])
+        self.ax_anim.set_zlim([0,10])      
   
         r = 0.1
         #Plot Landmarks
@@ -249,6 +249,19 @@ class EKF_SLAM:
         # Initialize the ellipsoid surface
         x_robot, y_robot, z_robot = self.get_ellipsoid(self.mu[0:3, 0], self.cov[0, 0:3, 0:3])
         self.surf = self.ax_anim.plot_surface(x_robot, y_robot, z_robot, color='b', alpha=0.3)
+
+        self.surf_landmarks = [None] * self.num_landmarks
+        self.surf_observations = [None] * self.num_landmarks
+
+        # for i in range(self.num_landmarks):
+        #     landmark_start_index = self.robot_state_size + (3*i)
+        #     x_LM, y_LM, z_LM = self.get_ellipsoid(
+        #             self.mu[landmark_start_index : landmark_start_index + 3, 0], 
+        #             self.cov[0, landmark_start_index : landmark_start_index + 3, landmark_start_index : landmark_start_index + 3]
+        #             )
+        #     self.surf_landmarks[i] = self.ax_anim.plot_surface(x_LM, y_LM, z_LM , color='r', alpha=0.3)  
+        #     temp_surf = self.surf_landmarks[i]
+        #     temp_surf.remove()  # Initial covariance is set to a high value, so will cover entire plot  
 
         self.ani = FuncAnimation(fig=fig, func=self.update_animation_frame,frames=self.num_time_steps, fargs=(self,),interval=45)
         plt.show()
@@ -289,6 +302,42 @@ class EKF_SLAM:
             self.surf.remove()  # Remove the old surface
             x_robot, y_robot, z_robot = self.get_ellipsoid(self.mu[0:3, frame], self.cov[frame, 0:3, 0:3])
             self.surf = self.ax_anim.plot_surface(x_robot, y_robot, z_robot, color='b', alpha=0.3)
+
+            for i in range(self.num_landmarks):
+                if self.surf_landmarks[i] is not None:
+                    temp_surf = self.surf_landmarks[i]
+                    temp_surf.remove()  # Initial covariance is set to a high value, so will cover entire plot  
+
+                # Check covariance size (using max eigenvalue)
+                landmark_start_index = self.robot_state_size + (3*i)
+                eigvals = np.linalg.eigh(self.cov[frame, landmark_start_index : landmark_start_index + 3, landmark_start_index : landmark_start_index + 3])[0]  # Only need eigenvalues
+                if np.max(eigvals) < 1000:  # Plot only if covariance is not too large
+                    x_LM, y_LM, z_LM = self.get_ellipsoid(
+                            self.mu[landmark_start_index : landmark_start_index + 3, frame], 
+                            self.cov[frame, landmark_start_index : landmark_start_index + 3, landmark_start_index : landmark_start_index + 3]
+                            )
+                    self.surf_landmarks[i] = self.ax_anim.plot_surface(x_LM, y_LM, z_LM , color='r', alpha=0.3)   
+                else:
+                     self.surf_landmarks[i] = None
+
+            landmark_rel_position =  1e5*np.ones((self.num_landmarks,3))
+            landmark_range        =  1e5*np.ones((self.num_landmarks))
+            for i in range(self.num_landmarks):
+                if self.surf_observations[i] is not None:
+                    temp_surf = self.surf_observations[i]
+                    temp_surf.remove()  
+                landmark_rel_position[i,:] = self.landmark_positions[i, :] - self.mu[0:3, frame]
+                landmark_range[i] = np.sqrt( np.dot(landmark_rel_position[i,:],landmark_rel_position[i,:]) )
+                if landmark_range[i] < self.sensor_range:
+                    self.surf_observations[i] = self.ax_anim.plot3D(
+                         [self.mu[0, frame], self.landmark_positions[i, 0]], 
+                         [self.mu[1, frame], self.landmark_positions[i, 1]], 
+                         [self.mu[2, frame], self.landmark_positions[i, 2]], lw=3 )[0]
+                else:
+                    if self.surf_observations[i] is not None:
+                        temp_surf = self.surf_observations[i]
+                        temp_surf.remove()                       
+                    self.surf_observations[i] = None
 
             return 
 
