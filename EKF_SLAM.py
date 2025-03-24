@@ -68,10 +68,14 @@ class EKF_SLAM:
     def simulate(self):
         # Simulate Quadcopter motion as per dynamics
         u_odom = np.array([0.2, 0.2, 0.2])
+        z = 0
         for i in range(self.num_time_steps-1):
             # self.mu[0:3,i+1] = self.mu[0:3,i] + 0.5
 
             #Prediction Step
+            u_odom = np.array([0.2*np.sin(self.time_vector[i]), 0.2*np.cos(self.time_vector[i]), z])
+            z += 0.002
+            
             self.mu[:,i+1], self.cov[i+1,:,:] = self.prediction_step(self.mu[:,i], self.cov[i,:,:,], u_odom)
 
             #Updates self.measurements/Get newest measurement
@@ -263,7 +267,7 @@ class EKF_SLAM:
         #     temp_surf = self.surf_landmarks[i]
         #     temp_surf.remove()  # Initial covariance is set to a high value, so will cover entire plot  
 
-        self.ani = FuncAnimation(fig=fig, func=self.update_animation_frame,frames=self.num_time_steps, fargs=(self,),interval=45)
+        self.ani = FuncAnimation(fig=fig, func=self.update_animation_frame,frames=self.num_time_steps, fargs=(self,),interval=15)
         plt.show()
     
     @staticmethod
@@ -333,10 +337,7 @@ class EKF_SLAM:
                          [self.mu[0, frame], self.landmark_positions[i, 0]], 
                          [self.mu[1, frame], self.landmark_positions[i, 1]], 
                          [self.mu[2, frame], self.landmark_positions[i, 2]], lw=3 )[0]
-                else:
-                    if self.surf_observations[i] is not None:
-                        temp_surf = self.surf_observations[i]
-                        temp_surf.remove()                       
+                else:                 
                     self.surf_observations[i] = None
 
             return 
