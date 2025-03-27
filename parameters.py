@@ -4,7 +4,7 @@ default_param_dict = {
   "Initial_State": np.array([4, 4, 2,]),
   "Initial_Covariance": np.zeros((3,3)),
   "Time_Step": 0.1,
-  "Final_Time": 10,
+  "Final_Time": 20,
   "Quad_Length": 0.2,
   "Landmarks": np.array([             #Coordinates of Landmarks
       # [1, 1, 1],                       #Comment whole line if ignoring landmarks
