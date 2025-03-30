@@ -45,8 +45,10 @@ class EKF_SLAM:
         # cov_mat_dim = int(self.cov_0.shape[0])
         
         self.mu = np.zeros((self.state_size,self.num_time_steps))
+        self.robot_actual_pose = np.zeros((3,self.num_time_steps))
         # Update state/mean vector with initial condition
         self.mu[0:self.robot_state_size, 0] = self.mu_0
+        self.robot_actual_pose[:, 0] = self.mu_0
 
         self.cov =  np.zeros((self.num_time_steps, self.state_size, self.state_size))
 
@@ -74,19 +76,25 @@ class EKF_SLAM:
             # self.mu[0:3,i+1] = self.mu[0:3,i] + 0.5
 
             #Prediction Step
-            u_odom = np.array([0.2*np.sin(self.time_vector[i]), 0.2*np.cos(self.time_vector[i]), z])
-            if self.mu[2,i] > 5:
-                mult = -1
-            else: 
-                if self.mu[2,i] < self.mu[2,0] :
-                    mult = 1
+            u_odom = np.array([0.2*np.sin(self.time_vector[i]), 0.2*np.cos(self.time_vector[i]), 0.2*np.sin(self.time_vector[i])])
+            # if self.mu[2,i] > 5:
+            #     mult = -1
+            # elif self.mu[2,i] < self.mu[2,0] :
+            #     mult = 1
 
-            z = mult*0.05
+            self.robot_actual_pose[:, i+1] = self.robot_actual_pose[:, i] + u_odom
+
+            u_odom[0] += 0.03*np.random.rand()
+            u_odom[1] += 0.03*np.random.rand()
+            u_odom[2] += 0.03*np.random.rand()
+
+            # z = mult*0.05
+            # z = 0
             
             self.mu[:,i+1], self.cov[i+1,:,:] = self.prediction_step(self.mu[:,i], self.cov[i,:,:,], u_odom)
 
             #Updates self.measurements/Get newest measurement
-            self.sensor_model(self.mu[:,i+1])  
+            self.sensor_model(self.robot_actual_pose[:, i+1])  
             
             #Measurement Update step
             self.mu[:,i+1], self.cov[i+1,:,:] = self.measurement_update(self.mu[:,i+1], self.cov[i+1,:,:])
@@ -104,7 +112,7 @@ class EKF_SLAM:
         cov_current = cov_previous.copy()
 
         mu_current[0:3] += u_odom
-        R = 0.03
+        R = 0.01
         cov_current[0,0] += R
         cov_current[1,1] += R
         cov_current[2,2] += R
@@ -131,9 +139,9 @@ class EKF_SLAM:
                 del_z = landmark_rel_position[i,2]
                 xy_distance = np.sqrt( (del_x**2) + (del_y**2))
 
-                self.measurements[i,0] = landmark_range[i]
-                self.measurements[i,1] = np.arctan2(del_z, xy_distance)
-                self.measurements[i,2] = np.arctan2(del_y, del_x)
+                self.measurements[i,0] = landmark_range[i] + 0.03*np.random.rand()
+                self.measurements[i,1] = np.arctan2(del_z, xy_distance) + 0.03*np.random.rand()
+                self.measurements[i,2] = np.arctan2(del_y, del_x)  + 0.03*np.random.rand()
 
     def measurement_update(self, mu, cov):
         # Measurement incorporation step of Kalman filter
@@ -209,7 +217,7 @@ class EKF_SLAM:
 
                 measurement_num  += 1
 
-        Q = 0.02 * np.eye(((3*num_measurements)))
+        Q = 0.01 * np.eye(((3*num_measurements)))
         K = (cov @ (H.T)) @ np.linalg.inv( (H @ cov @ (H.T)) + Q)
 
         mu = mu + (K @ (measurement-expected_measurement))
@@ -236,7 +244,7 @@ class EKF_SLAM:
         self.text_y = self.ax2.text(0.1, 0.4, '', transform=self.ax2.transAxes, fontsize=12, bbox=bbox_props)
         self.text_z = self.ax2.text(0.1, 0.2, '', transform=self.ax2.transAxes, fontsize=12, bbox=bbox_props)                                             
         
-        x0, y0, z0 = self.mu[0,0], self.mu[1,0], self.mu[2,0]
+        x0, y0, z0 = self.robot_actual_pose[0,0], self.robot_actual_pose[1,0], self.robot_actual_pose[2,0]
 
         l = self.quad_length
         self.quad_Arm1 = self.ax_anim.plot3D([x0+l, x0-l], [y0, y0], [z0, z0], lw=3 )[0]
@@ -272,7 +280,7 @@ class EKF_SLAM:
             # for each frame, update the data stored on each artist.
 
             time = self.time_vector[frame]
-            xt, yt, zt = self.mu[0,frame], self.mu[1,frame], self.mu[2,frame]
+            xt, yt, zt = self.robot_actual_pose[0,frame], self.robot_actual_pose[1,frame], self.robot_actual_pose[2,frame]
 
             Q = np.eye(3)
 
@@ -291,7 +299,7 @@ class EKF_SLAM:
 
             self.quad_Arm1.set_data_3d([xt+Arm1_Start[0], xt+Arm1_End[0]], [yt+Arm1_Start[1], yt+Arm1_End[1]], [zt+Arm1_Start[2], zt+Arm1_End[2]])
             self.quad_Arm2.set_data_3d([xt+Arm2_Start[0], xt+Arm2_End[0]], [yt+Arm2_Start[1], yt+Arm2_End[1]], [zt+Arm2_Start[2], zt+Arm2_End[2]])
-            self.quad_traj.set_data_3d(self.mu[0,:frame],self.mu[1,:frame],self.mu[2,:frame])
+            self.quad_traj.set_data_3d(self.robot_actual_pose[0,:frame],self.robot_actual_pose[1,:frame],self.robot_actual_pose[2,:frame])
 
             self.text_t.set_text(f't = {time:.2f} s')
             self.text_x.set_text(f'x = {xt:.2f} m')
