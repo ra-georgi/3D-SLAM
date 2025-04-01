@@ -18,4 +18,7 @@ default_param_dict = {
       [7, 7 ,7],                      
   ]),
   "Sensor_Working_Distance": 6,
+  "UKF_alpha" : 0.9,
+  "UKF_beta"  : 2,
+  "UKF_kappa" : 1,
 }

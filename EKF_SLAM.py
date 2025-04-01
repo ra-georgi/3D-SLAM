@@ -1,13 +1,5 @@
 # EKF SLAM class
 
-# Target EKF SLAM
-# Create virtual environment
-
-# Step 1: Prediction
-    # Use Odometry
-    # Use Control Commands
-# Step 2: Measurment Update
-
 import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib.animation import FuncAnimation
@@ -56,7 +48,7 @@ class EKF_SLAM:
         self.variance_landmarks =  1000*np.eye(3*self.num_landmarks)
         self.cov_robot_with_landmarks =  np.zeros((self.robot_state_size,3*self.num_landmarks))
 
-        #Should variance_landmarks for future timesteps be initialzed to 1000 too?
+        #Should variance_landmarks for future timesteps be initialzed to 1000 too? (self.cov[:, :, : ])
         self.cov[0, :, : ] = np.block([
             [self.variance_robot_pose,        self.cov_robot_with_landmarks        ],
             [self.cov_robot_with_landmarks.T, self.variance_landmarks              ]
@@ -70,26 +62,15 @@ class EKF_SLAM:
     def simulate(self):
         # Simulate Quadcopter motion as per dynamics
         u_odom = np.array([0.2, 0.2, 0.2])
-        z = 0
-        mult = 1
         for i in range(self.num_time_steps-1):
-            # self.mu[0:3,i+1] = self.mu[0:3,i] + 0.5
 
             #Prediction Step
             u_odom = np.array([0.2*np.sin(self.time_vector[i]), 0.2*np.cos(self.time_vector[i]), 0.2*np.sin(self.time_vector[i])])
-            # if self.mu[2,i] > 5:
-            #     mult = -1
-            # elif self.mu[2,i] < self.mu[2,0] :
-            #     mult = 1
-
             self.robot_actual_pose[:, i+1] = self.robot_actual_pose[:, i] + u_odom
 
             u_odom[0] += 0.03*np.random.rand()
             u_odom[1] += 0.03*np.random.rand()
             u_odom[2] += 0.03*np.random.rand()
-
-            # z = mult*0.05
-            # z = 0
             
             self.mu[:,i+1], self.cov[i+1,:,:] = self.prediction_step(self.mu[:,i], self.cov[i,:,:,], u_odom)
 
