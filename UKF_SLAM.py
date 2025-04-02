@@ -98,12 +98,16 @@ class UKF_SLAM:
 
         # Compute original distribution's sigma points
         sigma_points, weights_mean, weight_covariance = self.calc_sigma_points(mu_current, cov_current)
+        sigma_points += u_odom.reshape((3,1))
 
-        mu_current[0:3] += u_odom
-        R = 0.01
-        cov_current[0,0] += R
-        cov_current[1,1] += R
-        cov_current[2,2] += R
+        # Recover mu and sigma of the transformed distribution
+        mu_current, cov_current = self.recover_gaussian(sigma_points, weights_mean, weight_covariance)
+
+        # mu_current[0:3] += u_odom
+        # R = 0.01
+        # cov_current[0,0] += R
+        # cov_current[1,1] += R
+        # cov_current[2,2] += R
 
         return mu_current, cov_current
     
@@ -115,10 +119,21 @@ class UKF_SLAM:
     
         sigma_points[:,0] = mu_current
         # Check this, check everything up to this point
-        for i in range(n):
-            sigma_points[:,i] = mu_current + sigma_points[:,i]
+        for i in range(1,n+1):
+            sigma_points[:,i] = mu_current + sqrt_cov[:,i-1]
+        for i in range(n+1,(2*n)+1):
+            sigma_points[:,i] = mu_current - sqrt_cov[:,(i-1)-n]
 
-        weights_mean = []
-        weight_covariance = []
+        weights_mean = np.zeros((2*n)+1)
+        weight_covariance = np.zeros((2*n)+1)
+
+        weights_mean[0] = self.UKF_lambda / (n + self.UKF_lambda)
+        weight_covariance[0] = weights_mean[0] + (1 - (self.UKF_alpha**2) + self.UKF_beta)
+
+        weights_mean[1:]      = 1 / (2 * (n + self.UKF_lambda))
+        weight_covariance[1:] = 1 / (2 * (n + self.UKF_lambda))
 
         return sigma_points, weights_mean, weight_covariance
+    
+    def recover_gaussian(self, sigma_points, weights_mean, weight_covariance):
+        pass
