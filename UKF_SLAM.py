@@ -17,6 +17,8 @@ class UKF_SLAM:
         self.quad_length = param_dict["Quad_Length"]
         self.landmark_positions = param_dict["Landmarks"]
         self.sensor_range = param_dict["Sensor_Working_Distance"]
+        self.R_control_covariance = param_dict["Control_Covariance"]
+        self.Q_sensor_covariance = param_dict["Measurement_Covariance"]
         self.num_landmarks = int(self.landmark_positions.shape[0])
 
         # UKF Parameters
@@ -97,17 +99,15 @@ class UKF_SLAM:
         self.UKF_lambda = (self.UKF_alpha*self.UKF_alpha*(self.state_size+self.UKF_kappa))-self.state_size
 
         # Compute original distribution's sigma points
-        sigma_points, weights_mean, weight_covariance = self.calc_sigma_points(mu_current, cov_current)
+        sigma_points, weights_mean, weights_covariance = self.calc_sigma_points(mu_current, cov_current)
         sigma_points += u_odom.reshape((3,1))
 
         # Recover mu and sigma of the transformed distribution
-        mu_current, cov_current = self.recover_gaussian(sigma_points, weights_mean, weight_covariance)
+        mu_current, cov_current = self.recover_gaussian(sigma_points, weights_mean, weights_covariance)
 
-        # mu_current[0:3] += u_odom
-        # R = 0.01
-        # cov_current[0,0] += R
-        # cov_current[1,1] += R
-        # cov_current[2,2] += R
+        cov_current[0,0] += self.R_control_covariance
+        cov_current[1,1] += self.R_control_covariance
+        cov_current[2,2] += self.R_control_covariance
 
         return mu_current, cov_current
     
@@ -125,15 +125,28 @@ class UKF_SLAM:
             sigma_points[:,i] = mu_current - sqrt_cov[:,(i-1)-n]
 
         weights_mean = np.zeros((2*n)+1)
-        weight_covariance = np.zeros((2*n)+1)
+        weights_covariance = np.zeros((2*n)+1)
 
         weights_mean[0] = self.UKF_lambda / (n + self.UKF_lambda)
-        weight_covariance[0] = weights_mean[0] + (1 - (self.UKF_alpha**2) + self.UKF_beta)
+        weights_covariance[0] = weights_mean[0] + (1 - (self.UKF_alpha**2) + self.UKF_beta)
 
-        weights_mean[1:]      = 1 / (2 * (n + self.UKF_lambda))
-        weight_covariance[1:] = 1 / (2 * (n + self.UKF_lambda))
+        weights_mean[1:]       = 1 / (2 * (n + self.UKF_lambda))
+        weights_covariance[1:] = 1 / (2 * (n + self.UKF_lambda))
 
-        return sigma_points, weights_mean, weight_covariance
+        return sigma_points, weights_mean, weights_covariance
     
-    def recover_gaussian(self, sigma_points, weights_mean, weight_covariance):
-        pass
+    def recover_gaussian(self, sigma_points, weights_mean, weights_covariance):
+        # Correct in prediction, only robot sigma points should change
+
+        self.state_size = sigma_points.shape[0]
+        mu  = np.zeros(self.state_size)
+        cov = np.zeros((self.state_size,self.state_size))
+
+        for i in range(sigma_points.shape[1]):
+            mu  = mu   + (weights_mean[i]*sigma_points[:, i])
+
+        for i in range(sigma_points.shape[1]):
+            deviation = sigma_points[:, i]-mu
+            cov = cov  + (weights_covariance[i]*(np.outer(deviation,deviation)))
+
+        return mu, cov
