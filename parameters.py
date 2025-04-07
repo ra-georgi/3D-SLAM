@@ -17,7 +17,7 @@ default_param_dict = {
       # [8, 2, 3], 
       # [7, 7 ,7],                      
   ]),
-  "Sensor_Working_Distance": 3,
+  "Sensor_Working_Distance": 6,
   "Control_Covariance": 0.1,
   "Measurement_Covariance": 0.1,
   "UKF_alpha" : 0.9,

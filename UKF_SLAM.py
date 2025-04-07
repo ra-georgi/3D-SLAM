@@ -66,9 +66,10 @@ class UKF_SLAM:
         # 5th column is boolean representing if landmark was observed this time step (To know which landmarks were observed)
         # 6th column is original landmark number (may not observe in this order)
         self.measurements  =  np.zeros((self.num_landmarks, 6))
+        self.measurements[:,5]  =  -1
         self.landmarks_seen = 0
         # Keys are original landmark numbers, values are current order
-        self.landmark_dictionary = dict([  ])   #To relate measurements matrix to current mu vector (as landmarks not observed in order)
+        # self.landmark_dictionary = dict([  ])   #To relate measurements matrix to current mu vector (as landmarks not observed in order)
 
     def simulate(self):
         # Simulate Quadcopter motion as per dynamics
@@ -168,7 +169,6 @@ class UKF_SLAM:
         landmark_range        =  1e5*np.ones((self.num_landmarks))
 
         for i in range(self.num_landmarks):
-            self.measurements[i, 5] = i                        #Suboptimal I know, can initialize correctly later. Also starting from 0
             landmark_rel_position[i,:] = self.landmark_positions[i, :] - mu_estimate[0:3]
             landmark_range[i] = np.sqrt( np.dot(landmark_rel_position[i,:],landmark_rel_position[i,:]) )
 
@@ -195,26 +195,28 @@ class UKF_SLAM:
         
         measurement = np.array([])
         expected_measurement =  np.array([])
+
         #Number of measurements in this time step
-        current_measurement = self.measurements[self.measurements[:, 4] == 1]
+        num_measurements = int(sum(self.measurements[:,4]))
+        landmark_indexes_current = []
 
-        # H = np.zeros((3*num_measurements,self.state_size))
-        # measurement_num  = 0   #To properly create H matrix as not all measurment contribute to H at every time step
+        for measurement_index in range(self.num_landmarks):
 
-        for measurement_index in range(current_measurement.shape[0]):
+            # Not Measured in this time step             
+            if (int(self.measurements[measurement_index, 4]) == 0):
+                continue
 
-            range_reading = current_measurement[measurement_index, 0]
-            pitch_reading = current_measurement[measurement_index, 1] 
-            yaw_reading   = current_measurement[measurement_index, 2] 
+            range_reading = self.measurements[measurement_index, 0]
+            pitch_reading = self.measurements[measurement_index, 1] 
+            yaw_reading   = self.measurements[measurement_index, 2] 
 
-            original_landmark_num = current_measurement[measurement_index, 5].astype(np.int64)
-                
             #Initialize Landmark position if not previously observed
-            if (current_measurement[measurement_index, 3] == 0):
+            if (self.measurements[measurement_index, 3] == 0):
 
-                self.measurements[original_landmark_num, 3] = 1  #Marking as observed
-                self.landmark_dictionary[original_landmark_num] = self.landmarks_seen
+                self.measurements[measurement_index, 3] = 1  #Marking as observed
+                self.measurements[measurement_index, 5] = self.landmarks_seen
                 self.landmarks_seen += 1
+                self.state_size += 3
 
                 z_landmark = range_reading*np.sin(pitch_reading)
                 xy = range_reading*np.cos(pitch_reading)
@@ -224,9 +226,21 @@ class UKF_SLAM:
                 y_robot = mu[1]
                 z_robot = mu[2]
                 mu = np.append(mu, [x_robot+x_landmark, y_robot+y_landmark, z_robot+z_landmark])
-                cov = block_diag(cov, self.Q_sensor_covariance*np.eye(3) )
-                
-                    
+                cov = block_diag(cov, self.Q_sensor_covariance*np.eye(3) )  # Not as per formula, but I'm trying it
+
+            # measurement = np.append(measurement, self.measurements[measurement_index, 0:3])  
+            landmark_indexes_current.append(int(self.measurements[measurement_index, 5]))
+
+
+        # Compute original distribution's sigma points
+        sigma_points, weights_mean, weights_covariance = self.calc_sigma_points(mu, cov)
+
+        num_sigma_points = sigma_points.shape[1]
+        sigma_expected_measurement = np.zeros((3*num_measurements, num_sigma_points))
+        
+        for i in range(num_sigma_points):
+            sigma_expected_measurement[:,i] = self.calc_expected_measurement(sigma_points[:,i],landmark_indexes_current)
+        
         #     landmark_rel_position = mu[self.robot_state_size+(3*i) : self.robot_state_size+(3*i)+3] - mu[0:3]
         #     del_x = landmark_rel_position[0]
         #     del_y = landmark_rel_position[1]
@@ -240,12 +254,48 @@ class UKF_SLAM:
         #     measurement = np.append(measurement, self.measurements[i, 0:3])
         #     expected_measurement = np.append(expected_measurement, [predicted_range,predicted_pitch, predicted_yaw])
 
-        #     measurement_num  += 1
-
 
         # K = (cov @ (H.T)) @ np.linalg.inv( (H @ cov @ (H.T)) + Q)
 
         # mu = mu + (K @ (measurement-expected_measurement))
         # cov = (np.eye(self.state_size) - (K @ H) ) @ cov;        
+
+        # for i in range(self.num_landmarks):
+        #     #Measured in this time step             
+        #     if (self.measurements[i, 4] == 1):
+        #         #Initialize Landmark position if not previously observed
+        #         if (self.measurements[i, 3] == 0):
+        #             self.measurements[i, 3] = 1
         
         return mu, cov
+    
+
+    def calc_expected_measurement(self, mu_estimate, landmark_indexes_current):
+        #Simulates range, pitch, and yaw sensor
+        
+        landmark_rel_position =  1e5*np.ones((self.num_landmarks,3))
+        landmark_range        =  1e5*np.ones((self.num_landmarks))
+
+        current_measurement  =  self.measurements[self.measurements[:,4] == 1]
+        order = np.argsort(current_measurement[:, 5])
+        reordered_arr = current_measurement[order]
+
+        for i in range(reordered_arr[0]):
+            if self.measurements[i, 4] == 1:
+                pass
+
+            # landmark_rel_position[i,:] = self.landmark_positions[i, :] - mu_estimate[0:3]
+            # landmark_range[i] = np.sqrt( np.dot(landmark_rel_position[i,:],landmark_rel_position[i,:]) )
+
+            # if landmark_range[i] < self.sensor_range:
+            #     # self.measurements[i, 3] = 1             #Set in measurment update step
+            #     self.measurements[i, 4] = 1
+
+            #     del_x = landmark_rel_position[i,0]
+            #     del_y = landmark_rel_position[i,1]
+            #     del_z = landmark_rel_position[i,2]
+            #     xy_distance = np.sqrt( (del_x**2) + (del_y**2))
+
+            #     self.measurements[i,0] = landmark_range[i] 
+            #     self.measurements[i,1] = np.arctan2(del_z, xy_distance) 
+            #     self.measurements[i,2] = np.arctan2(del_y, del_x)  
