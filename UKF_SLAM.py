@@ -110,7 +110,7 @@ class UKF_SLAM:
 
         # Compute original distribution's sigma points
         sigma_points, weights_mean, weights_covariance = self.calc_sigma_points(mu_current, cov_current)
-        sigma_points += u_odom.reshape((3,1))
+        sigma_points[0:3,:] += u_odom.reshape((3,1))
 
         # Recover mu and sigma of the transformed distribution
         mu_current, cov_current = self.recover_gaussian(sigma_points, weights_mean, weights_covariance)
@@ -193,12 +193,12 @@ class UKF_SLAM:
         mu =  mu_prediction.copy()
         cov = cov_prediction.copy()
         
-        measurement = np.array([])
-        expected_measurement =  np.array([])
-
         #Number of measurements in this time step
         num_measurements = int(sum(self.measurements[:,4]))
         landmark_indexes_current = []
+        measurement = np.array([])
+        mean_expected_measurement =  np.zeros(3*num_measurements)
+
 
         for measurement_index in range(self.num_landmarks):
 
@@ -239,33 +239,27 @@ class UKF_SLAM:
         sigma_expected_measurement = np.zeros((3*num_measurements, num_sigma_points))
         
         for i in range(num_sigma_points):
-            sigma_expected_measurement[:,i] = self.calc_expected_measurement(sigma_points[:,i],landmark_indexes_current)
+            sigma_expected_measurement[:,i], measurement = self.calc_expected_measurement(sigma_points[:,i],landmark_indexes_current)
         
-        #     landmark_rel_position = mu[self.robot_state_size+(3*i) : self.robot_state_size+(3*i)+3] - mu[0:3]
-        #     del_x = landmark_rel_position[0]
-        #     del_y = landmark_rel_position[1]
-        #     del_z = landmark_rel_position[2]
-        #     xy_distance = np.sqrt( (del_x**2) + (del_y**2))
+        for i in range(num_sigma_points):
+            mean_expected_measurement  = mean_expected_measurement   + (weights_mean[i]*sigma_expected_measurement[:,i])
 
-        #     predicted_range = np.sqrt( np.dot(landmark_rel_position,landmark_rel_position) )
-        #     predicted_pitch = np.arctan2(del_z, xy_distance)
-        #     predicted_yaw   = np.arctan2(del_y, del_x)
+        St = np.zeros((3*num_measurements, 3*num_measurements))
+        cross_cov = np.zeros((self.state_size, 3*num_measurements))
 
-        #     measurement = np.append(measurement, self.measurements[i, 0:3])
-        #     expected_measurement = np.append(expected_measurement, [predicted_range,predicted_pitch, predicted_yaw])
+        for i in range(num_sigma_points):
+            deviation_measurement = sigma_expected_measurement[:,i] - mean_expected_measurement
+            deviation_mean        = sigma_points[:, i] - mu
+            St  = St   + (weights_covariance[i]*(np.outer(deviation_measurement,deviation_measurement)))
+            cross_cov  = cross_cov   + (weights_covariance[i]*(np.outer(deviation_mean,deviation_measurement)))
 
+        St += self.Q_sensor_covariance*np.eye(3*num_measurements)
 
-        # K = (cov @ (H.T)) @ np.linalg.inv( (H @ cov @ (H.T)) + Q)
+        K = (cross_cov) @ np.linalg.inv(St)
 
-        # mu = mu + (K @ (measurement-expected_measurement))
-        # cov = (np.eye(self.state_size) - (K @ H) ) @ cov;        
+        mu = mu + (K @ (measurement-mean_expected_measurement))
+        cov = cov - (K@St@ (K.T))                           #(np.eye(self.state_size) - (K @ H) ) @ cov;        
 
-        # for i in range(self.num_landmarks):
-        #     #Measured in this time step             
-        #     if (self.measurements[i, 4] == 1):
-        #         #Initialize Landmark position if not previously observed
-        #         if (self.measurements[i, 3] == 0):
-        #             self.measurements[i, 3] = 1
         
         return mu, cov
     
@@ -273,29 +267,30 @@ class UKF_SLAM:
     def calc_expected_measurement(self, mu_estimate, landmark_indexes_current):
         #Simulates range, pitch, and yaw sensor
         
-        landmark_rel_position =  1e5*np.ones((self.num_landmarks,3))
-        landmark_range        =  1e5*np.ones((self.num_landmarks))
+        measurement = np.array([])
+        expected_measurement =  np.array([])
 
         current_measurement  =  self.measurements[self.measurements[:,4] == 1]
         order = np.argsort(current_measurement[:, 5])
         reordered_arr = current_measurement[order]
 
-        for i in range(reordered_arr[0]):
-            if self.measurements[i, 4] == 1:
-                pass
+        for idx in range(reordered_arr.shape[0]):
+            i = int(reordered_arr[idx,5])
+            landmark_rel_position = mu_estimate[self.robot_state_size+(3*i) : self.robot_state_size+(3*i)+3] - mu_estimate[0:3]
+            del_x = landmark_rel_position[0]
+            del_y = landmark_rel_position[1]
+            del_z = landmark_rel_position[2]
+            xy_distance = np.sqrt( (del_x**2) + (del_y**2))
 
-            # landmark_rel_position[i,:] = self.landmark_positions[i, :] - mu_estimate[0:3]
-            # landmark_range[i] = np.sqrt( np.dot(landmark_rel_position[i,:],landmark_rel_position[i,:]) )
+            predicted_range = np.sqrt( np.dot(landmark_rel_position,landmark_rel_position) )
+            predicted_pitch = np.arctan2(del_z, xy_distance)
+            predicted_yaw   = np.arctan2(del_y, del_x)
+            measurement =     np.append(measurement, reordered_arr[idx, 0:3])
+            expected_measurement = np.append(expected_measurement, [predicted_range, predicted_pitch, predicted_yaw])        
 
-            # if landmark_range[i] < self.sensor_range:
-            #     # self.measurements[i, 3] = 1             #Set in measurment update step
-            #     self.measurements[i, 4] = 1
+        return expected_measurement, measurement
 
-            #     del_x = landmark_rel_position[i,0]
-            #     del_y = landmark_rel_position[i,1]
-            #     del_z = landmark_rel_position[i,2]
-            #     xy_distance = np.sqrt( (del_x**2) + (del_y**2))
 
-            #     self.measurements[i,0] = landmark_range[i] 
-            #     self.measurements[i,1] = np.arctan2(del_z, xy_distance) 
-            #     self.measurements[i,2] = np.arctan2(del_y, del_x)  
+
+
+
