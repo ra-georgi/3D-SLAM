@@ -1,6 +1,6 @@
 # 3D-SLAM
 
-Implementation of conventional SLAM algorithms for 3D applications. As of now, the extended Kalman filter has been implemented in Python for simultaneous localization and mapping in 3 dimensions
+Implementation of conventional SLAM algorithms for 3D applications. As of now, the extended and unscented Kalman filter has been implemented in Python for simultaneous localization and mapping in 3 dimensions
 
 
 ![SLAM using EKF](EKF_SLAM.gif) 
